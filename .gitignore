@@ -1,0 +1,27 @@
+*.pyc
+*.egg-info/
+
+logo_data/images
+logo_data/images/*
+*_data/my_vectordb
+*_data/my_vectordb/*
+
+cpp_data/
+
+logs/*
+test_runs/*
+temp*/
+
+# cleanup release
+python_data/*
+data/mini_clusters/
+data/mini_cluster_processing/
+
+data/clusters/
+cluster_results_metrics/
+plot/
+retrieval_ablation/
+multi_pass/
+scripts/codecontests/archive/
+scripts/codecontests/minicluster/archive/
+test_results/
