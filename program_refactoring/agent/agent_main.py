@@ -16,6 +16,7 @@ from program_refactoring.domains.logos.visual_sim import load_img, vis_compare
 from program_refactoring.domains.python.utils import (
     get_func_names as get_python_func_names,
 )
+from program_refactoring.tree.node import CodeContestNode
 
 logger = logging.getLogger(__name__)
 try:
@@ -137,7 +138,26 @@ def rerun_acc_logos(example, path):
 
 
 def rerun_acc_python(example, path):
-    raise NotImplementedError
+    pred_path = path / f"{example.id}_pred.py"
+    codebank_path = path / "codebank.py"
+
+    if not pred_path.exists():
+        return False, None
+
+    pred_program = pred_path.read_text()
+    codebank = codebank_path.read_text() if codebank_path.exists() else ""
+
+    node = CodeContestNode(
+        example.query,
+        pred_program,
+        example.expected_answer,
+        type="pred",
+        name=example.id,
+        temp_dir=path,
+    )
+
+    result = node.execute(codebank, pred_path)
+    return all(result.passed), pred_program
 
 
 def check_acc_all(agent, examples, path, batch_size=5, rerun=False):
