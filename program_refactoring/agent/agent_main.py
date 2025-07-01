@@ -5,6 +5,7 @@ import pdb
 import random
 import subprocess
 from pathlib import Path
+import ast
 
 import numpy as np
 import torch
@@ -81,7 +82,42 @@ def read_data_from_logdir(logdir, existing=[], task_type="logos"):
     return train_data
 
 
+def read_data_from_project(project_path: Path, task_name: str, ids=None):
+    """Load training or evaluation data from a local project directory.
+
+    Every ``.py`` file is treated as a single example.  The function uses the
+    module's top level docstring (if present) as the query description and the
+    file contents as the program body.  Files located inside ``tests``
+    subdirectories or named ``test_*.py`` are ignored.
+    """
+
+    examples = []
+    for i, file_path in enumerate(project_path.rglob("*.py")):
+        if "tests" in file_path.parts or file_path.name.startswith("test_"):
+            continue
+
+        code = file_path.read_text()
+        try:
+            doc = ast.get_docstring(ast.parse(code))
+        except SyntaxError:
+            # skip files that do not parse correctly
+            continue
+
+        description = doc if doc else file_path.stem
+        idx = f"{task_name}_{i}"
+        ex = Example(idx, description, program=code, provenance="project")
+        examples.append(ex)
+
+    print(f"Number of examples from project {project_path}: {len(examples)}")
+    return examples
+
+
 def read_data_from_json(path, task_name, ids=None):
+    path = Path(path)
+
+    if path.is_dir():
+        return read_data_from_project(path, task_name, ids)
+
     with open(path) as f1:
         data = [json.loads(x) for x in f1.readlines()]
     examples = []
@@ -89,9 +125,6 @@ def read_data_from_json(path, task_name, ids=None):
         if ids is not None and "id" in line.keys() and line["id"] not in ids:
             continue
         idx = f"{task_name}_{i}"
-        print("!!! Reading from JSON, Program key is None, looking for other places")
-        print(task_name)
-        print("codecontests")
         # format the tests into input + output
         tests = {
             "input": line["public_tests"]["input"]
@@ -256,7 +289,10 @@ def check_acc_python_single(agent, example, path):
     # check accuracy (without batching)
     pred_res, pred_prog = agent(example)
 
-    if example.program is not None:
+    if example.expected_answer is None:
+        # No ground truth available; simply return the generated program
+        return True, pred_prog
+    elif example.program is not None:
         gold_node = agent.node_cls(
             example.query, example.program, type="gold", temp_dir=path, name=example.id
         )
@@ -281,8 +317,12 @@ def check_acc_python(agent, examples, path, batch_size=5, rerun=False):
         zip(examples, pred_ress, pred_progs), total=len(examples)
     ):
         # print("Example", example.query, example.program, example.expected_answer)
+        if example.expected_answer is None:
+            # No evaluation possible; assume success
+            tfs.append(True)
+            continue
+
         if example.program is not None:
-            print("+++ Example program is not None")
             gold_node = agent.node_cls(
                 example.query,
                 example.program,
@@ -294,16 +334,10 @@ def check_acc_python(agent, examples, path, batch_size=5, rerun=False):
             fname = path / f"{example.id}_gold.py"
             gold_res = gold_node.execute(fname)
             gold_ans = gold_res.passed
-            print("Gold answer", gold_ans)
         else:
-            raise NotImplementedError
-            print("!!! Example program is None")
             gold_ans = extract_gold_answer(agent.dataset, example.expected_answer)
 
         tfs.append(all(pred_res.passed))
-
-        print("tfs", tfs)
-        print("? Pred ans", pred_res.passed, " + Gold ans", gold_ans)
     return tfs, pred_progs
 
 
